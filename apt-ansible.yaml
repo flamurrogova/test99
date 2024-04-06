@@ -1,0 +1,20 @@
+---
+- hosts: "masters, workers"
+  remote_user: "{{ansible_user}}"
+  become: yes
+  become_method: sudo
+  become_user: root
+  gather_facts: yes
+  connection: ssh
+  
+  tasks:
+
+      # Add source repository into sources list.
+      - apt_repository:
+          repo: deb-src http://archive.canonical.com/ubuntu hardy partner
+          state: present
+        environment:
+          http_proxy:  http://10.70.110.10:3128
+          https_proxy: http://10.70.110.10:3128
+
+

@@ -1,0 +1,79 @@
+---
+- hosts: "masters, workers"
+  remote_user: "{{ansible_user}}"
+  become: yes
+  become_method: sudo
+  become_user: root
+  gather_facts: yes
+  connection: ssh
+  
+  tasks:
+
+    - name: OS Prerequisites | Make the Swap inactive
+      command: swapoff -a
+
+    - name: OS Prerequisites | Remove Swap entry from /etc/fstab.
+      lineinfile:
+        dest: /etc/fstab
+        regexp: swap
+        state: absent
+
+    - name: OS Prerequisites | Configure modules for containerd
+      blockinfile:
+        path: /etc/modules-load.d/containerd.conf 
+        create: yes
+        block: |
+          overlay
+          br_netfilter
+
+    - name: OS Prerequisites | Load overlay br_netfilter modules
+      shell: |
+        modprobe overlay
+        modprobe br_netfilter
+
+    - name: OS Prerequisites | Configure sysctl params for Kubernetes.
+      lineinfile:
+        path: /etc/sysctl.d/99-kubernetes-cri.conf 
+        line: "{{ item }}"
+        create: yes
+      with_items:
+        - 'net.bridge.bridge-nf-call-iptables  = 1'
+        - 'net.ipv4.ip_forward                 = 1'
+        - 'net.bridge.bridge-nf-call-ip6tables = 1'
+
+    - name: OS Prerequisites | Apply sysctl params without reboot.
+      command: sysctl --system
+
+    - name: OS Prerequisites | Configure /etc/crictl.yaml
+      blockinfile:
+        path: /etc/crictl.yaml
+        create: yes
+        block: |
+          runtime-endpoint: unix:///var/run/containerd/containerd.sock
+          image-endpoint:   unix:///var/run/containerd/containerd.sock
+          timeout: 5
+          debug: false
+
+    - name: Containerd | Installing Prerequisites
+      apt: 
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release          
+          - software-properties-common
+          - vim
+        state: present
+        #update_cache: yes
+
+    - name: Containerd | Add Docker's official GPG key
+      shell: |
+        curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+    - name: Containerd | Add Docker's official GPG key
+      shell: |
+        echo \
+        "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian \
+        $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
